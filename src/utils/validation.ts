@@ -37,6 +37,33 @@ export function formatUpdatedDate(iso: string): string {
   }).format(date);
 }
 
+export function formatFirebaseAuthError(error: unknown, hostname = ''): string {
+  const rawCode =
+    error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
+  const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+  const code = rawCode || (rawMessage.match(/auth\/[a-z0-9-]+/i)?.[0] ?? '');
+
+  if (code === 'auth/unauthorized-domain') {
+    const hostLabel = hostname ? ` (${hostname})` : '';
+    return `Domain${hostLabel} belum didaftarkan di Firebase Console -> Authentication -> Settings -> Authorized domains.`;
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Jendela login Google ditutup sebelum selesai.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Pop-up login Google diblokir oleh browser. Izinkan pop-up untuk situs ini lalu coba lagi.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Koneksi internet bermasalah saat menghubungi layanan login Google.';
+  }
+  if (code) {
+    return `Gagal masuk dengan akun Google (${code}).`;
+  }
+  return 'Gagal masuk dengan akun Google. Pastikan pop-up diizinkan dan domain sudah terdaftar di Firebase.';
+}
+
 function cleanText(value: unknown, fallback: string, maxLen = 500): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();

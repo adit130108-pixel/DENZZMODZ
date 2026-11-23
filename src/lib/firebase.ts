@@ -2,7 +2,9 @@ import { initializeApp } from 'firebase/app';
 import {
   GoogleAuthProvider,
   getAuth,
+  getRedirectResult,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from 'firebase/auth';
@@ -176,9 +178,24 @@ export async function checkIsUserAdmin(user: User | null): Promise<boolean> {
   }
 }
 
-export async function signInAdminWithGoogle(): Promise<User> {
-  const cred = await signInWithPopup(auth, googleProvider);
-  return cred.user;
+getRedirectResult(auth).catch(() => null);
+
+export async function signInAdminWithGoogle(): Promise<User | null> {
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    return cred.user;
+  } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+        ? (error as { code: string }).code
+        : '';
+    const isTopLevelWindow = typeof window !== 'undefined' && window.self === window.top;
+    if (code === 'auth/popup-blocked' && isTopLevelWindow) {
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function signOutAdmin(): Promise<void> {

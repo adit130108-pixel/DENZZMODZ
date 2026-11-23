@@ -21,7 +21,11 @@ import type {
   DownloadItem,
   SiteConfig,
 } from '../types/site';
-import { formatUpdatedDate, validateSiteConfigUpdate } from '../utils/validation';
+import {
+  formatFirebaseAuthError,
+  formatUpdatedDate,
+  validateSiteConfigUpdate,
+} from '../utils/validation';
 
 interface AdminPageProps {
   config: SiteConfig;
@@ -96,12 +100,8 @@ export function AdminPage({
     try {
       await signInAdminWithGoogle();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Gagal masuk dengan Google.';
-      if (msg.includes('popup-closed-by-user')) {
-        setAuthError('Jendela login Google ditutup sebelum selesai.');
-      } else {
-        setAuthError('Gagal masuk dengan akun Google. Pastikan pop-up diizinkan.');
-      }
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+      setAuthError(formatFirebaseAuthError(error, host));
     } finally {
       setAuthSubmitting(false);
     }

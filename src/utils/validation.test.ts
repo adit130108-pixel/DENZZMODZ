@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDefaultSiteConfig } from './siteDefaults';
-import { isSafeHttpUrl, splitWordsForReveal, validateSiteConfigUpdate } from './validation';
+import {
+  formatFirebaseAuthError,
+  isSafeHttpUrl,
+  splitWordsForReveal,
+  validateSiteConfigUpdate,
+} from './validation';
 
 test('isSafeHttpUrl accepts valid http and https links only', () => {
   assert.equal(isSafeHttpUrl('https://sociabuzz.com/rilishub/tribe'), true);
@@ -79,4 +84,22 @@ test('validateSiteConfigUpdate accepts valid updates including online/offline to
     assert.ok(invalid.errors['sociabuzz.url']);
     assert.ok(invalid.errors['channel.url']);
   }
+});
+
+test('formatFirebaseAuthError returns clear Indonesian diagnostic for unauthorized-domain and popup errors', () => {
+  const unauthMsg = formatFirebaseAuthError(
+    { code: 'auth/unauthorized-domain', message: 'Firebase: Error (auth/unauthorized-domain).' },
+    'denzzmodz.vercel.app'
+  );
+  assert.match(unauthMsg, /denzzmodz\.vercel\.app/);
+  assert.match(unauthMsg, /Authorized domains/);
+
+  assert.match(
+    formatFirebaseAuthError({ code: 'auth/popup-closed-by-user' }),
+    /ditutup sebelum selesai/
+  );
+  assert.match(
+    formatFirebaseAuthError(new Error('Firebase: Error (auth/popup-blocked).')),
+    /diblokir oleh browser/
+  );
 });
