@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Public configuration for DENZZMODZ online/offline status, download links, Sociabuzz support page, and community channel links.",
+      "type": "object",
+      "properties": {
+        "brandName": {
+          "type": "string",
+          "description": "Website brand name",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "creatorName": {
+          "type": "string",
+          "description": "Creator display name",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "isOnline": {
+          "type": "boolean",
+          "description": "Whether the public website is online or in offline maintenance mode"
+        },
+        "maintenanceMessage": {
+          "type": "string",
+          "description": "Message shown to visitors when the website is offline",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "download": {
+          "type": "object",
+          "description": "Primary download release and item list"
+        },
+        "sociabuzz": {
+          "type": "object",
+          "description": "Sociabuzz support link and supporter tiers"
+        },
+        "channel": {
+          "type": "object",
+          "description": "Community channel invite link and platform details"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when settings were last saved"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "UID of the admin who last saved settings",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "brandName",
+        "creatorName",
+        "isOnline",
+        "maintenanceMessage",
+        "download",
+        "sociabuzz",
+        "channel",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin record stored in Firestore.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"]
+        }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Singleton site settings document at /settings/site."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Admin role membership documents."
+    }
+  }
+}

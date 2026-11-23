@@ -1,0 +1,6 @@
+{
+  "name": "DENZZMODZ",
+  "description": "DENZZMODZ — Portal link download resmi, halaman dukungan Sociabuzz, halaman join saluran komunitas, dan panel admin.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

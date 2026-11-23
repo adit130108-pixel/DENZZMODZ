@@ -1,0 +1,158 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'dezzzzzz2007@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isSafeUrl(val) {
+      return val is string && val.size() >= 8 && val.size() <= 2000 && val.matches('^https?://.+');
+    }
+
+    function isValidDownloadSection(dl) {
+      return dl is map
+        && dl.keys().hasAll([
+          'heroTitle', 'heroSubtitle', 'primaryTitle', 'primaryVersion',
+          'primarySize', 'primaryFormat', 'primaryDescription', 'primaryUrl',
+          'primaryClicks', 'items'
+        ])
+        && dl.keys().hasOnly([
+          'heroTitle', 'heroSubtitle', 'primaryTitle', 'primaryVersion',
+          'primarySize', 'primaryFormat', 'primaryDescription', 'primaryUrl',
+          'primaryClicks', 'items'
+        ])
+        && dl.heroTitle is string && dl.heroTitle.size() >= 1 && dl.heroTitle.size() <= 140
+        && dl.heroSubtitle is string && dl.heroSubtitle.size() >= 1 && dl.heroSubtitle.size() <= 320
+        && dl.primaryTitle is string && dl.primaryTitle.size() >= 1 && dl.primaryTitle.size() <= 120
+        && dl.primaryVersion is string && dl.primaryVersion.size() >= 1 && dl.primaryVersion.size() <= 32
+        && dl.primarySize is string && dl.primarySize.size() >= 1 && dl.primarySize.size() <= 32
+        && dl.primaryFormat is string && dl.primaryFormat.size() >= 1 && dl.primaryFormat.size() <= 48
+        && dl.primaryDescription is string && dl.primaryDescription.size() >= 1 && dl.primaryDescription.size() <= 320
+        && isSafeUrl(dl.primaryUrl)
+        && dl.primaryClicks is int && dl.primaryClicks >= 0
+        && dl.items is list && dl.items.size() <= 20
+        && (dl.items.size() == 0 || (
+          dl.items[0] is map
+          && dl.items[0].keys().hasAll(['id', 'title', 'category', 'version', 'fileSize', 'format', 'description', 'url', 'clicks'])
+          && dl.items[0].keys().hasOnly(['id', 'title', 'category', 'version', 'fileSize', 'format', 'description', 'url', 'clicks'])
+          && dl.items[0].title is string && dl.items[0].title.size() >= 1 && dl.items[0].title.size() <= 120
+          && isSafeUrl(dl.items[0].url)
+        ));
+    }
+
+    function isValidSociabuzzSection(sb) {
+      return sb is map
+        && sb.keys().hasAll(['url', 'title', 'subtitle', 'creatorNote', 'ctaLabel', 'tiers'])
+        && sb.keys().hasOnly(['url', 'title', 'subtitle', 'creatorNote', 'ctaLabel', 'tiers'])
+        && isSafeUrl(sb.url)
+        && sb.title is string && sb.title.size() >= 1 && sb.title.size() <= 140
+        && sb.subtitle is string && sb.subtitle.size() >= 1 && sb.subtitle.size() <= 320
+        && sb.creatorNote is string && sb.creatorNote.size() >= 1 && sb.creatorNote.size() <= 500
+        && sb.ctaLabel is string && sb.ctaLabel.size() >= 1 && sb.ctaLabel.size() <= 60
+        && sb.tiers is list && sb.tiers.size() >= 1 && sb.tiers.size() <= 6
+        && sb.tiers[0] is map
+        && sb.tiers[0].keys().hasAll(['id', 'amount', 'title', 'description'])
+        && sb.tiers[0].keys().hasOnly(['id', 'amount', 'title', 'description'])
+        && sb.tiers[0].title is string && sb.tiers[0].title.size() >= 1 && sb.tiers[0].title.size() <= 80;
+    }
+
+    function isValidChannelSection(ch) {
+      return ch is map
+        && ch.keys().hasAll(['url', 'name', 'platform', 'handle', 'title', 'subtitle', 'ctaLabel', 'benefits'])
+        && ch.keys().hasOnly(['url', 'name', 'platform', 'handle', 'title', 'subtitle', 'ctaLabel', 'benefits'])
+        && isSafeUrl(ch.url)
+        && ch.name is string && ch.name.size() >= 1 && ch.name.size() <= 100
+        && ch.platform in ['Telegram', 'WhatsApp Channel', 'Discord', 'Lainnya']
+        && ch.handle is string && ch.handle.size() >= 1 && ch.handle.size() <= 80
+        && ch.title is string && ch.title.size() >= 1 && ch.title.size() <= 140
+        && ch.subtitle is string && ch.subtitle.size() >= 1 && ch.subtitle.size() <= 320
+        && ch.ctaLabel is string && ch.ctaLabel.size() >= 1 && ch.ctaLabel.size() <= 60
+        && ch.benefits is list && ch.benefits.size() >= 1 && ch.benefits.size() <= 6
+        && ch.benefits[0] is map
+        && ch.benefits[0].keys().hasAll(['id', 'title', 'description'])
+        && ch.benefits[0].keys().hasOnly(['id', 'title', 'description'])
+        && ch.benefits[0].title is string && ch.benefits[0].title.size() >= 1 && ch.benefits[0].title.size() <= 80;
+    }
+
+    function isValidSiteSettings(data) {
+      return data.keys().hasAll([
+          'brandName', 'creatorName', 'isOnline', 'maintenanceMessage',
+          'download', 'sociabuzz', 'channel', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'brandName', 'creatorName', 'isOnline', 'maintenanceMessage',
+          'download', 'sociabuzz', 'channel', 'updatedAt', 'updatedBy'
+        ])
+        && data.brandName is string && data.brandName.size() >= 1 && data.brandName.size() <= 60
+        && data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 80
+        && data.isOnline is bool
+        && data.maintenanceMessage is string && data.maintenanceMessage.size() >= 1 && data.maintenanceMessage.size() <= 320
+        && isValidDownloadSection(data.download)
+        && isValidSociabuzzSection(data.sociabuzz)
+        && isValidChannelSection(data.channel)
+        && data.updatedBy is string && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp && data.updatedAt == request.time;
+    }
+
+    function isValidAdminUser(data, adminUid) {
+      return data.keys().hasAll(['uid', 'email', 'role'])
+        && data.keys().hasOnly(['uid', 'email', 'role'])
+        && data.uid is string && data.uid == adminUid
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.role == 'admin';
+    }
+
+    // Connection check document
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+    }
+
+    // Public single-document read for site links and online/offline status; admin-only writes
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && settingId == 'site';
+      allow create: if isValidId(settingId) && settingId == 'site'
+        && isAdmin()
+        && isValidSiteSettings(incoming());
+      allow update: if isValidId(settingId) && settingId == 'site'
+        && isAdmin()
+        && isValidSiteSettings(incoming())
+        && incoming().diff(resource.data).affectedKeys().hasOnly([
+          'brandName', 'creatorName', 'isOnline', 'maintenanceMessage',
+          'download', 'sociabuzz', 'channel', 'updatedAt', 'updatedBy'
+        ]);
+      allow delete: if isValidId(settingId) && settingId == 'site' && isAdmin();
+    }
+
+    // Admin membership documents
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isAdmin() || (isSignedIn() && request.auth.uid == adminUid));
+      allow create, update: if isValidId(adminUid)
+        && isAdmin()
+        && isValidAdminUser(incoming(), adminUid);
+      allow delete: if isValidId(adminUid) && isAdmin();
+    }
+  }
+}
