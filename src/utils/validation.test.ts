@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createDefaultSiteConfig } from './siteDefaults';
 import {
   formatFirebaseAuthError,
+  formatFirestoreSaveError,
   isSafeHttpUrl,
   splitWordsForReveal,
   validateSiteConfigUpdate,
@@ -10,6 +11,7 @@ import {
 
 test('isSafeHttpUrl accepts valid http and https links only', () => {
   assert.equal(isSafeHttpUrl('https://sociabuzz.com/rilishub/tribe'), true);
+  assert.equal(isSafeHttpUrl('Https://sociabuzz.com/rilishub/tribe'), true);
   assert.equal(isSafeHttpUrl('http://localhost:3000/file.zip'), true);
   assert.equal(isSafeHttpUrl('  https://t.me/rilishub_official  '), true);
   assert.equal(isSafeHttpUrl('javascript:alert(1)'), false);
@@ -29,7 +31,7 @@ test('splitWordsForReveal splits headlines cleanly without empty tokens', () => 
   assert.deepEqual(splitWordsForReveal(''), []);
 });
 
-test('validateSiteConfigUpdate accepts valid updates including online/offline toggle and rejects unsafe URLs', () => {
+test('validateSiteConfigUpdate accepts valid updates, normalizes capitalized schemes, and rejects unsafe URLs', () => {
   const base = createDefaultSiteConfig();
 
   const valid = validateSiteConfigUpdate(
@@ -39,11 +41,17 @@ test('validateSiteConfigUpdate accepts valid updates including online/offline to
       maintenanceMessage: 'Sedang update paket terbaru.',
       download: {
         ...base.download,
-        primaryUrl: 'https://cdn.example.com/app-v3.zip',
+        primaryUrl: 'HTTPS://cdn.example.com/app-v3.zip',
+        items: [
+          {
+            ...base.download.items[0],
+            url: 'Https://github.com/denzzmodz/app.apk',
+          },
+        ],
       },
       sociabuzz: {
         ...base.sociabuzz,
-        url: 'https://sociabuzz.com/creator/donate',
+        url: 'Https://sociabuzz.com/creator/donate',
       },
       channel: {
         ...base.channel,
@@ -58,6 +66,7 @@ test('validateSiteConfigUpdate accepts valid updates including online/offline to
     assert.equal(valid.data.isOnline, false);
     assert.equal(valid.data.maintenanceMessage, 'Sedang update paket terbaru.');
     assert.equal(valid.data.download.primaryUrl, 'https://cdn.example.com/app-v3.zip');
+    assert.equal(valid.data.download.items[0]?.url, 'https://github.com/denzzmodz/app.apk');
     assert.equal(valid.data.sociabuzz.url, 'https://sociabuzz.com/creator/donate');
     assert.equal(valid.data.channel.url, 'https://whatsapp.com/channel/0029VaExample');
   }
@@ -102,4 +111,30 @@ test('formatFirebaseAuthError returns clear Indonesian diagnostic for unauthoriz
     formatFirebaseAuthError(new Error('Firebase: Error (auth/popup-blocked).')),
     /diblokir oleh browser/
   );
+});
+
+test('formatFirestoreSaveError parses FirestoreErrorInfo JSON into actionable Indonesian messages', () => {
+  const permErr = new Error(
+    JSON.stringify({
+      error: 'Missing or insufficient permissions.',
+      operationType: 'write',
+      path: 'settings/site',
+      authInfo: { email: 'dezzzzzz2007@gmail.com' },
+    })
+  );
+  const permMsg = formatFirestoreSaveError(permErr);
+  assert.match(permMsg, /dezzzzzz2007@gmail\.com/);
+  assert.match(permMsg, /permission-denied/);
+
+  const quotaErr = new Error(
+    JSON.stringify({
+      error: "Quota exceeded for quota metric 'Free daily read units per project'.",
+      operationType: 'write',
+      path: 'settings/site',
+    })
+  );
+  assert.match(formatFirestoreSaveError(quotaErr), /Kuota baca\/tulis harian gratis Firebase/);
+
+  const offlineErr = new Error('Failed to get document because the client is offline.');
+  assert.match(formatFirestoreSaveError(offlineErr), /Koneksi ke Firebase terputus/);
 });

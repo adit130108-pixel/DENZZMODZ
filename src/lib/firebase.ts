@@ -142,6 +142,10 @@ export async function saveSiteConfigToFirestore(
   uid: string
 ): Promise<SiteConfig> {
   const path = 'settings/site';
+  const activeUid = auth.currentUser?.uid ?? uid;
+  if (!auth.currentUser || !activeUid) {
+    handleFirestoreError(new Error('unauthenticated: Sesi login tidak ditemukan.'), OperationType.WRITE, path);
+  }
   const payload = {
     brandName: config.brandName,
     creatorName: config.creatorName,
@@ -151,7 +155,7 @@ export async function saveSiteConfigToFirestore(
     sociabuzz: config.sociabuzz,
     channel: config.channel,
     updatedAt: serverTimestamp(),
-    updatedBy: uid,
+    updatedBy: activeUid,
   };
 
   try {
@@ -167,7 +171,7 @@ export async function saveSiteConfigToFirestore(
 
 export async function checkIsUserAdmin(user: User | null): Promise<boolean> {
   if (!user || !user.emailVerified) return false;
-  if (user.email === BOOTSTRAP_ADMIN_EMAIL) return true;
+  if (user.email?.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL) return true;
 
   const path = `admins/${user.uid}`;
   try {

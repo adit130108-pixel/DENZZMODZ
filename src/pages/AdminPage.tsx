@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Check, Lock, LogOut, Plus, Power, PowerOff, RotateCcw, Save, ShieldAlert, Trash2 } from 'lucide-react';
@@ -23,6 +23,7 @@ import type {
 } from '../types/site';
 import {
   formatFirebaseAuthError,
+  formatFirestoreSaveError,
   formatUpdatedDate,
   validateSiteConfigUpdate,
 } from '../utils/validation';
@@ -65,13 +66,17 @@ export function AdminPage({
 
   const [activeTab, setActiveTab] = useState<AdminTab>('download');
   const [draft, setDraft] = useState<SiteConfig>(() => structuredClone(config));
+  const lastSyncedUpdatedAtRef = useRef<string>(config.updatedAt);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setDraft(structuredClone(config));
+    if (config.updatedAt !== lastSyncedUpdatedAtRef.current) {
+      lastSyncedUpdatedAtRef.current = config.updatedAt;
+      setDraft(structuredClone(config));
+    }
   }, [config]);
 
   useEffect(() => {
@@ -130,12 +135,16 @@ export function AdminPage({
     setSaving(true);
     try {
       const saved = await saveSiteConfigToFirestore(validation.data, user.uid);
+      lastSyncedUpdatedAtRef.current = saved.updatedAt;
       onConfigSaved(saved);
       setDraft(structuredClone(saved));
       setSaveMessage('Semua link dan pengaturan berhasil disimpan aman ke Firebase Firestore.');
-    } catch {
+    } catch (error) {
       setSaveError(
-        'Gagal menyimpan ke Firebase. Pastikan akun Anda memiliki izin admin dan aturan Firestore aktif.'
+        formatFirestoreSaveError(
+          error,
+          'Gagal menyimpan ke Firebase. Pastikan akun Anda memiliki izin admin dan aturan Firestore aktif.'
+        )
       );
     } finally {
       setSaving(false);
@@ -164,6 +173,7 @@ export function AdminPage({
     setSaving(true);
     try {
       const saved = await saveSiteConfigToFirestore(validation.data, user.uid);
+      lastSyncedUpdatedAtRef.current = saved.updatedAt;
       onConfigSaved(saved);
       setDraft(structuredClone(saved));
       setSaveMessage(
@@ -171,9 +181,12 @@ export function AdminPage({
           ? 'Website DENZZMODZ sekarang ONLINE dan dapat diakses publik.'
           : 'Website DENZZMODZ sekarang OFFLINE (Mode Pemeliharaan aktif untuk pengunjung).'
       );
-    } catch {
+    } catch (error) {
       setSaveError(
-        'Gagal mengubah status online/offline ke Firebase. Pastikan akun Anda memiliki izin admin.'
+        formatFirestoreSaveError(
+          error,
+          'Gagal mengubah status online/offline ke Firebase. Pastikan akun Anda memiliki izin admin.'
+        )
       );
     } finally {
       setSaving(false);
@@ -189,11 +202,12 @@ export function AdminPage({
     try {
       const defaults = createDefaultSiteConfig();
       const saved = await saveSiteConfigToFirestore(defaults, user.uid);
+      lastSyncedUpdatedAtRef.current = saved.updatedAt;
       onConfigSaved(saved);
       setDraft(structuredClone(saved));
       setSaveMessage('Pengaturan di Firebase dikembalikan ke konfigurasi awal.');
-    } catch {
-      setSaveError('Gagal mereset pengaturan di Firebase.');
+    } catch (error) {
+      setSaveError(formatFirestoreSaveError(error, 'Gagal mereset pengaturan di Firebase.'));
     } finally {
       setSaving(false);
     }
@@ -489,6 +503,7 @@ export function AdminPage({
                     <input
                       id="hero-title"
                       type="text"
+                      maxLength={140}
                       value={draft.download.heroTitle}
                       onChange={(e) =>
                         setDraft((prev) => ({
@@ -507,6 +522,7 @@ export function AdminPage({
                     <textarea
                       id="hero-subtitle"
                       rows={2}
+                      maxLength={320}
                       value={draft.download.heroSubtitle}
                       onChange={(e) =>
                         setDraft((prev) => ({
@@ -565,6 +581,7 @@ export function AdminPage({
                             id={`item-title-${idx}`}
                             type="text"
                             required
+                            maxLength={120}
                             value={item.title}
                             onChange={(e) => updateItem(idx, { title: e.target.value })}
                             className={COMPACT_INPUT_CLASS}
@@ -587,6 +604,7 @@ export function AdminPage({
                             id={`item-url-${idx}`}
                             type="url"
                             required
+                            maxLength={2000}
                             value={item.url}
                             onChange={(e) => updateItem(idx, { url: e.target.value })}
                             className={`${COMPACT_INPUT_CLASS} font-mono`}
@@ -632,6 +650,7 @@ export function AdminPage({
                             <input
                               id={`item-ver-${idx}`}
                               type="text"
+                              maxLength={32}
                               value={item.version}
                               onChange={(e) => updateItem(idx, { version: e.target.value })}
                               className={`${COMPACT_INPUT_CLASS} font-mono`}
@@ -648,6 +667,7 @@ export function AdminPage({
                             <input
                               id={`item-size-${idx}`}
                               type="text"
+                              maxLength={32}
                               value={item.fileSize}
                               onChange={(e) => updateItem(idx, { fileSize: e.target.value })}
                               className={`${COMPACT_INPUT_CLASS} font-mono`}
@@ -665,6 +685,7 @@ export function AdminPage({
                           <input
                             id={`item-desc-${idx}`}
                             type="text"
+                            maxLength={300}
                             value={item.description}
                             onChange={(e) => updateItem(idx, { description: e.target.value })}
                             className={COMPACT_INPUT_CLASS}
@@ -693,6 +714,7 @@ export function AdminPage({
                     id="sociabuzz-url"
                     type="url"
                     required
+                    maxLength={2000}
                     value={draft.sociabuzz.url}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -715,6 +737,7 @@ export function AdminPage({
                     id="sociabuzz-title"
                     type="text"
                     required
+                    maxLength={140}
                     value={draft.sociabuzz.title}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -736,6 +759,7 @@ export function AdminPage({
                   <input
                     id="sociabuzz-cta"
                     type="text"
+                    maxLength={60}
                     value={draft.sociabuzz.ctaLabel}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -754,6 +778,7 @@ export function AdminPage({
                   <textarea
                     id="sociabuzz-subtitle"
                     rows={2}
+                    maxLength={320}
                     value={draft.sociabuzz.subtitle}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -772,6 +797,7 @@ export function AdminPage({
                   <textarea
                     id="sociabuzz-note"
                     rows={3}
+                    maxLength={500}
                     value={draft.sociabuzz.creatorNote}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -801,6 +827,7 @@ export function AdminPage({
                     id="channel-url"
                     type="url"
                     required
+                    maxLength={2000}
                     value={draft.channel.url}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -823,6 +850,7 @@ export function AdminPage({
                     id="channel-name"
                     type="text"
                     required
+                    maxLength={100}
                     value={draft.channel.name}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -870,6 +898,7 @@ export function AdminPage({
                   <input
                     id="channel-handle"
                     type="text"
+                    maxLength={80}
                     value={draft.channel.handle}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -888,6 +917,7 @@ export function AdminPage({
                   <input
                     id="channel-cta"
                     type="text"
+                    maxLength={60}
                     value={draft.channel.ctaLabel}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -906,6 +936,7 @@ export function AdminPage({
                   <input
                     id="channel-title"
                     type="text"
+                    maxLength={140}
                     value={draft.channel.title}
                     onChange={(e) =>
                       setDraft((prev) => ({
@@ -924,6 +955,7 @@ export function AdminPage({
                   <textarea
                     id="channel-subtitle"
                     rows={2}
+                    maxLength={320}
                     value={draft.channel.subtitle}
                     onChange={(e) =>
                       setDraft((prev) => ({

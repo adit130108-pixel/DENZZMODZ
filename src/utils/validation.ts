@@ -3,16 +3,23 @@ import type { ChannelPlatform, DownloadCategory, DownloadItem, SiteConfig } from
 const ALLOWED_CATEGORIES: DownloadCategory[] = ['Aplikasi', 'Template', 'Asset', 'Dokumen'];
 const ALLOWED_PLATFORMS: ChannelPlatform[] = ['Telegram', 'WhatsApp Channel', 'Discord', 'Lainnya'];
 
-export function isSafeHttpUrl(raw: string): boolean {
-  if (typeof raw !== 'string') return false;
+export function normalizeSafeHttpUrl(raw: string): string | null {
+  if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > 2000) return false;
+  if (!trimmed || trimmed.length > 2000 || /[\r\n]/.test(trimmed)) return null;
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return trimmed.replace(/^https?:\/\//i, (scheme) => scheme.toLowerCase());
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isSafeHttpUrl(raw: string): boolean {
+  return normalizeSafeHttpUrl(raw) !== null;
 }
 
 export function splitWordsForReveal(text: string): string[] {
@@ -64,6 +71,62 @@ export function formatFirebaseAuthError(error: unknown, hostname = ''): string {
   return 'Gagal masuk dengan akun Google. Pastikan pop-up diizinkan dan domain sudah terdaftar di Firebase.';
 }
 
+export function formatFirestoreSaveError(
+  error: unknown,
+  fallbackMessage = 'Gagal menyimpan ke Firebase.'
+): string {
+  const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+  let innerMessage = rawMessage;
+  let emailInfo = '';
+
+  if (rawMessage.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawMessage) as {
+        error?: unknown;
+        authInfo?: { email?: unknown; emailVerified?: unknown; userId?: unknown };
+      };
+      if (typeof parsed.error === 'string' && parsed.error.trim()) {
+        innerMessage = parsed.error.trim();
+      }
+      if (typeof parsed.authInfo?.email === 'string' && parsed.authInfo.email) {
+        emailInfo = parsed.authInfo.email;
+      }
+    } catch {
+      // Ignore JSON parse failure and use raw message
+    }
+  }
+
+  const lower = innerMessage.toLowerCase();
+
+  if (lower.includes('quota exceeded') || lower.includes('resource-exhausted')) {
+    return 'Kuota baca/tulis harian gratis Firebase Firestore sedang habis. Kuota akan direset keesokan hari atau dapat ditingkatkan di Firebase Console.';
+  }
+
+  if (lower.includes('missing or insufficient permissions') || lower.includes('permission-denied')) {
+    const accountLabel = emailInfo ? ` untuk akun ${emailInfo}` : '';
+    return `Izin tulis ke Firestore ditolak${accountLabel} (permission-denied). Pastikan seluruh link diawali http:// atau https://, sesi login masih aktif, lalu coba keluar dan masuk ulang.`;
+  }
+
+  if (lower.includes('unauthenticated') || lower.includes('sesi login')) {
+    return 'Sesi login Firebase Anda telah berakhir. Silakan klik Keluar lalu masuk kembali dengan Google.';
+  }
+
+  if (
+    lower.includes('unavailable') ||
+    lower.includes('client is offline') ||
+    lower.includes('network') ||
+    lower.includes('failed to fetch')
+  ) {
+    return 'Koneksi ke Firebase terputus atau server sedang sibuk. Periksa koneksi internet Anda lalu coba simpan lagi.';
+  }
+
+  if (innerMessage) {
+    return `${fallbackMessage} Detail: ${innerMessage}`;
+  }
+
+  return fallbackMessage;
+}
+
 function cleanText(value: unknown, fallback: string, maxLen = 500): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
@@ -82,8 +145,8 @@ export function validateSiteConfigUpdate(
   const candidate = input as Partial<SiteConfig>;
   const errors: Record<string, string> = {};
 
-  const primaryUrl = candidate.download?.primaryUrl?.trim() ?? '';
-  if (!isSafeHttpUrl(primaryUrl)) {
+  const primaryUrl = normalizeSafeHttpUrl(candidate.download?.primaryUrl ?? '');
+  if (!primaryUrl) {
     errors['download.primaryUrl'] = 'Link download utama wajib menggunakan URL http:// atau https:// yang valid.';
   }
 
@@ -92,8 +155,8 @@ export function validateSiteConfigUpdate(
     errors['download.primaryTitle'] = 'Judul paket download utama tidak boleh kosong.';
   }
 
-  const sociabuzzUrl = candidate.sociabuzz?.url?.trim() ?? '';
-  if (!isSafeHttpUrl(sociabuzzUrl)) {
+  const sociabuzzUrl = normalizeSafeHttpUrl(candidate.sociabuzz?.url ?? '');
+  if (!sociabuzzUrl) {
     errors['sociabuzz.url'] = 'Link Sociabuzz wajib menggunakan URL http:// atau https:// yang valid.';
   }
 
@@ -102,8 +165,8 @@ export function validateSiteConfigUpdate(
     errors['sociabuzz.title'] = 'Judul halaman dukungan Sociabuzz tidak boleh kosong.';
   }
 
-  const channelUrl = candidate.channel?.url?.trim() ?? '';
-  if (!isSafeHttpUrl(channelUrl)) {
+  const channelUrl = normalizeSafeHttpUrl(candidate.channel?.url ?? '');
+  if (!channelUrl) {
     errors['channel.url'] = 'Link join saluran wajib menggunakan URL http:// atau https:// yang valid.';
   }
 
@@ -123,11 +186,11 @@ export function validateSiteConfigUpdate(
   const validatedItems: DownloadItem[] = [];
   rawItems.slice(0, 20).forEach((item, idx) => {
     const title = typeof item?.title === 'string' ? item.title.trim() : '';
-    const url = typeof item?.url === 'string' ? item.url.trim() : '';
+    const normalizedUrl = normalizeSafeHttpUrl(typeof item?.url === 'string' ? item.url : '');
     if (!title) {
       errors[`download.items.${idx}.title`] = `Judul item download #${idx + 1} wajib diisi.`;
     }
-    if (!isSafeHttpUrl(url)) {
+    if (!normalizedUrl) {
       errors[`download.items.${idx}.url`] = `URL item download #${idx + 1} wajib diawali http:// atau https://.`;
     }
     const category = ALLOWED_CATEGORIES.includes(item?.category as DownloadCategory)
@@ -141,7 +204,7 @@ export function validateSiteConfigUpdate(
       fileSize: cleanText(item?.fileSize, '10 MB', 32),
       format: cleanText(item?.format, 'ZIP', 48),
       description: cleanText(item?.description, 'Paket rilis siap unduh.', 300),
-      url,
+      url: normalizedUrl ?? '',
       clicks:
         typeof item?.clicks === 'number' && Number.isFinite(item.clicks) && item.clicks >= 0
           ? Math.floor(item.clicks)
@@ -149,7 +212,7 @@ export function validateSiteConfigUpdate(
     });
   });
 
-  if (Object.keys(errors).length > 0) {
+  if (Object.keys(errors).length > 0 || !primaryUrl || !sociabuzzUrl || !channelUrl) {
     return { ok: false, errors };
   }
 
