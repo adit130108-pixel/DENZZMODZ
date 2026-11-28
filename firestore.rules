@@ -18,12 +18,14 @@ service cloud.firestore {
     }
 
     function isSignedIn() {
-      return request.auth != null && request.auth.token.email_verified == true;
+      return request.auth != null
+        && 'email_verified' in request.auth.token
+        && request.auth.token.email_verified == true;
     }
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email is string && request.auth.token.email.lower() == 'dezzzzzz2007@gmail.com') ||
+        ('email' in request.auth.token && request.auth.token.email == 'dezzzzzz2007@gmail.com') ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -114,7 +116,11 @@ service cloud.firestore {
         && isValidSociabuzzSection(data.sociabuzz)
         && isValidChannelSection(data.channel)
         && data.updatedBy is string && data.updatedBy == request.auth.uid
-        && data.updatedAt is timestamp && data.updatedAt == request.time;
+        && data.updatedAt is timestamp
+        && (
+          data.updatedAt == request.time ||
+          math.abs(data.updatedAt.toMillis() - request.time.toMillis()) < 60000
+        );
     }
 
     function isValidAdminUser(data, adminUid) {
@@ -138,11 +144,7 @@ service cloud.firestore {
         && isValidSiteSettings(incoming());
       allow update: if isValidId(settingId) && settingId == 'site'
         && isAdmin()
-        && isValidSiteSettings(incoming())
-        && incoming().diff(resource.data).affectedKeys().hasOnly([
-          'brandName', 'creatorName', 'isOnline', 'maintenanceMessage',
-          'download', 'sociabuzz', 'channel', 'updatedAt', 'updatedBy'
-        ]);
+        && isValidSiteSettings(incoming());
       allow delete: if isValidId(settingId) && settingId == 'site' && isAdmin();
     }
 

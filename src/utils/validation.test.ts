@@ -117,14 +117,33 @@ test('formatFirestoreSaveError parses FirestoreErrorInfo JSON into actionable In
   const permErr = new Error(
     JSON.stringify({
       error: 'Missing or insufficient permissions.',
+      projectId: 'denzzmodz',
       operationType: 'write',
       path: 'settings/site',
-      authInfo: { email: 'dezzzzzz2007@gmail.com' },
+      authInfo: { email: 'dezzzzzz2007@gmail.com', emailVerified: true },
     })
   );
   const permMsg = formatFirestoreSaveError(permErr);
   assert.match(permMsg, /dezzzzzz2007@gmail\.com/);
   assert.match(permMsg, /permission-denied/);
+  assert.match(permMsg, /denzzmodz/);
+
+  const base = createDefaultSiteConfig();
+  const emojiTitle = '🔥'.repeat(50);
+  const res = validateSiteConfigUpdate(
+    {
+      ...base,
+      download: {
+        ...base.download,
+        heroTitle: emojiTitle,
+      },
+    },
+    base
+  );
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.ok(new TextEncoder().encode(res.data.download.heroTitle).length <= 140);
+  }
 
   const quotaErr = new Error(
     JSON.stringify({

@@ -3,16 +3,38 @@ import type { ChannelPlatform, DownloadCategory, DownloadItem, SiteConfig } from
 const ALLOWED_CATEGORIES: DownloadCategory[] = ['Aplikasi', 'Template', 'Asset', 'Dokumen'];
 const ALLOWED_PLATFORMS: ChannelPlatform[] = ['Telegram', 'WhatsApp Channel', 'Discord', 'Lainnya'];
 
+const utf8Encoder = new TextEncoder();
+
+function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).length;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (utf8ByteLength(value) <= maxBytes) return value;
+  let result = '';
+  for (const ch of value) {
+    const next = result + ch;
+    if (utf8ByteLength(next) > maxBytes) break;
+    result = next;
+  }
+  return result;
+}
+
 export function normalizeSafeHttpUrl(raw: string): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > 2000 || /[\r\n]/.test(trimmed)) return null;
+  if (!trimmed || /[\r\n]/.test(trimmed)) return null;
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return null;
     }
-    return trimmed.replace(/^https?:\/\//i, (scheme) => scheme.toLowerCase());
+    const normalized = trimmed.replace(/^https?:\/\//i, (scheme) => scheme.toLowerCase());
+    const bytes = utf8ByteLength(normalized);
+    if (bytes < 8 || bytes > 2000) {
+      return null;
+    }
+    return normalized;
   } catch {
     return null;
   }
@@ -78,18 +100,34 @@ export function formatFirestoreSaveError(
   const rawMessage = error instanceof Error ? error.message : String(error ?? '');
   let innerMessage = rawMessage;
   let emailInfo = '';
+  let projectInfo = '';
+  let verifiedInfo: boolean | null = null;
+  let failedChecks: string[] = [];
 
   if (rawMessage.startsWith('{')) {
     try {
       const parsed = JSON.parse(rawMessage) as {
         error?: unknown;
+        projectId?: unknown;
+        payloadSummary?: { failedRuleChecks?: unknown };
         authInfo?: { email?: unknown; emailVerified?: unknown; userId?: unknown };
       };
       if (typeof parsed.error === 'string' && parsed.error.trim()) {
         innerMessage = parsed.error.trim();
       }
+      if (typeof parsed.projectId === 'string' && parsed.projectId) {
+        projectInfo = parsed.projectId;
+      }
       if (typeof parsed.authInfo?.email === 'string' && parsed.authInfo.email) {
         emailInfo = parsed.authInfo.email;
+      }
+      if (typeof parsed.authInfo?.emailVerified === 'boolean') {
+        verifiedInfo = parsed.authInfo.emailVerified;
+      }
+      if (Array.isArray(parsed.payloadSummary?.failedRuleChecks)) {
+        failedChecks = parsed.payloadSummary.failedRuleChecks.filter(
+          (item): item is string => typeof item === 'string'
+        );
       }
     } catch {
       // Ignore JSON parse failure and use raw message
@@ -104,7 +142,13 @@ export function formatFirestoreSaveError(
 
   if (lower.includes('missing or insufficient permissions') || lower.includes('permission-denied')) {
     const accountLabel = emailInfo ? ` untuk akun ${emailInfo}` : '';
-    return `Izin tulis ke Firestore ditolak${accountLabel} (permission-denied). Pastikan seluruh link diawali http:// atau https://, sesi login masih aktif, lalu coba keluar dan masuk ulang.`;
+    const detailParts = [
+      projectInfo ? `proyek: ${projectInfo}` : '',
+      verifiedInfo === false ? 'email belum terverifikasi' : '',
+      failedChecks.length > 0 ? `cek aturan: ${failedChecks.join(', ')}` : '',
+    ].filter(Boolean);
+    const detailSuffix = detailParts.length > 0 ? ` [${detailParts.join(', ')}]` : '';
+    return `Izin tulis ke Firestore ditolak${accountLabel} (permission-denied${detailSuffix}). Pastikan seluruh link diawali http:// atau https://, sesi login masih aktif, lalu coba keluar dan masuk ulang.`;
   }
 
   if (lower.includes('unauthenticated') || lower.includes('sesi login')) {
@@ -128,10 +172,10 @@ export function formatFirestoreSaveError(
 }
 
 function cleanText(value: unknown, fallback: string, maxLen = 500): string {
-  if (typeof value !== 'string') return fallback;
+  if (typeof value !== 'string') return truncateUtf8(fallback, maxLen);
   const trimmed = value.trim();
-  if (!trimmed) return fallback;
-  return trimmed.slice(0, maxLen);
+  if (!trimmed) return truncateUtf8(fallback, maxLen);
+  return truncateUtf8(trimmed, maxLen) || truncateUtf8(fallback, maxLen);
 }
 
 export function validateSiteConfigUpdate(
